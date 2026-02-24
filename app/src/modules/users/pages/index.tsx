@@ -1,11 +1,28 @@
 import { useEffect, useState, useRef, useId } from 'react'
-import { Search, Plus, ChevronDown } from 'lucide-react'
-import { listUsers } from '../services'
-import type { User, ListUsersResult } from '../domain/types'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Search, Plus, ChevronDown, Eye, EyeOff } from 'lucide-react'
+import { listUsers, deleteUser } from '../services'
+import type { ListUsersResult, CreateUserPayload, UpdateUserPayload } from '../domain/types'
+import { useCreateUser, useEditUser } from '../hooks'
+import {
+  validateCreateUser,
+  validateUpdateUser,
+  isCreateUserValid,
+  isUpdateUserValid,
+} from '../domain/validations'
+import type {
+  UserFormValues,
+  UserFormErrors,
+  UserFormLayoutProps,
+  UserRowProps,
+  ActionIconButtonProps,
+  PaginationButtonProps,
+} from './types'
 
 const LIMIT_OPTIONS = [15, 50, 80, 100]
 
 export function UsersPage() {
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(15)
@@ -13,6 +30,7 @@ export function UsersPage() {
   const [loading, setLoading] = useState(false)
   const [limitDropdownOpen, setLimitDropdownOpen] = useState(false)
   const limitDropdownRef = useRef<HTMLDivElement>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
     if (!limitDropdownOpen) return
@@ -47,12 +65,39 @@ export function UsersPage() {
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [page, limit, search])
 
-  const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 3000)
+    return () => window.clearTimeout(id)
+  }, [toast])
+
+  const handleDelete = async (userId: string) => {
+    try {
+      await deleteUser(userId)
+      let newPage = page
+      let res = await listUsers({ search: search || undefined, page, limit })
+      if (res.items.length === 0 && res.total > 0 && page > 1) {
+        newPage = 1
+        res = await listUsers({ search: search || undefined, page: 1, limit })
+      }
+      setData(res)
+      if (newPage !== page) setPage(newPage)
+      setToast('Usuário excluído com sucesso.')
+    } catch {
+    }
+  }
+
+  const totalPages =
+    data && data.limit > 0
+      ? Math.max(1, Math.ceil(data.total / data.limit))
+      : 1
   const canPrev = page > 1
-  const canNext = page < totalPages
+  const canNext = totalPages > 1 && page < totalPages
 
   return (
     <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
@@ -95,14 +140,11 @@ export function UsersPage() {
               }}
             />
           </div>
-          <button
-            type="button"
-            className="w-[223px] h-[56px] rounded-[8px] font-['Manrope'] font-semibold text-white flex items-center justify-center gap-2 shrink-0 transition-all duration-300 ease-out hover:opacity-90 opacity-100 disabled:opacity-100 disabled:cursor-not-allowed"
-            style={{
-              background: '#0290A4 0% 0% no-repeat padding-box',
-              opacity: 1,
-            }}
-          >
+        <button
+          type="button"
+          onClick={() => navigate('/usuarios/novo')}
+          className="w-[223px] h-[56px] rounded-[8px] font-['Manrope'] font-semibold text-white flex items-center justify-center gap-2 shrink-0 transition-colors duration-200 ease-out bg-[#0290A4] hover:bg-[#017E92] active:bg-[#016979] cursor-pointer"
+        >
             <Plus className="w-5 h-5" strokeWidth={2.5} />
             Cadastrar Usuário
           </button>
@@ -162,7 +204,13 @@ export function UsersPage() {
                       </tr>
                     ) : data?.items.length ? (
                       data.items.map((user) => (
-                        <UserRow key={user.id} user={user} />
+                        <UserRow
+                          key={user.id}
+                          user={user}
+                          onView={(u) => navigate(`/usuarios/${u.id}`)}
+                          onEdit={(u) => navigate(`/usuarios/${u.id}/editar`)}
+                          onDelete={(u) => handleDelete(u.id)}
+                        />
                       ))
                     ) : (
                       <tr>
@@ -255,6 +303,637 @@ export function UsersPage() {
               </div>
             </footer>
           )}
+      </div>
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="min-w-[240px] max-w-[320px] px-4 py-3 rounded-[6px] bg-white shadow-[0px_2px_8px_#00000040] border-l-4 border-l-[#0290A4] font-['Manrope'] text-sm text-[#0B2B25]">
+            {toast}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UserFormLayout({
+  mode,
+  title,
+  breadcrumbLabel,
+  primaryButtonLabel,
+  submitting,
+  canSubmit,
+  values,
+  errors,
+  onChange,
+  onSubmit,
+  onCancel,
+}: UserFormLayoutProps) {
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [focusedField, setFocusedField] = useState<keyof UserFormValues | null>(null)
+
+  const showLabel = (field: keyof UserFormValues) =>
+    focusedField === field || (values[field] !== undefined && String(values[field]).trim() !== '')
+
+  const inputBase =
+    'w-full h-[44px] px-3 pt-4 pb-1 font-[\'Manrope\'] text-sm text-[#0B2B25] placeholder:text-[#9ca3af] rounded-t-[4px] rounded-b-[4px] border border-[#e5e7eb] bg-[#F5F5F5] hover:bg-[#EAEAEA] cursor-pointer focus:cursor-text transition-colors duration-200 focus:outline-none focus:ring-0 focus:border-[#e5e7eb] focus:border-b-2 focus:border-b-[#0290A4]'
+  const labelTeal = 'text-[12px] leading-[17px] font-[\'Manrope\'] font-semibold text-[#0290A4]'
+
+  return (
+    <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
+      <div className="flex-1 flex flex-col min-h-0 w-full max-w-[1494px] mx-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
+          <p className="font-['Manrope'] text-sm text-[#64748b] mb-1">
+            Usuários {'>'}{' '}
+            <span className="text-[#0B2B25]">{breadcrumbLabel}</span>
+          </p>
+          <h1
+            className="font-['Manrope'] font-bold text-left mb-4 opacity-100"
+            style={{
+              fontSize: '38px',
+              lineHeight: '52px',
+              letterSpacing: '0px',
+              color: '#0B2B25',
+            }}
+          >
+            {title}
+          </h1>
+
+          <form
+            onSubmit={onSubmit}
+            className="w-full max-w-[1503px] bg-white rounded-[6px] shadow-[0px_1px_4px_#00000029] border border-[#e2e8f0] px-6 py-6 flex flex-col gap-6"
+          >
+            <section>
+              <div className="flex items-center mb-4">
+                <h2 className="font-['Manrope'] text-[14px] leading-[19px] font-bold text-[#0B2B25]">
+                  Dados do Usuário
+                </h2>
+                <div className="ml-4 flex-1 h-px bg-[#CBD5E1]" />
+              </div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="relative">
+                      <input
+                        id="user-name"
+                        type="text"
+                        value={values.name}
+                        onChange={(e) => onChange('name', e.target.value)}
+                        onFocus={() => setFocusedField('name')}
+                        onBlur={() => setFocusedField(null)}
+                        placeholder="Insira o nome completo*"
+                        className={inputBase}
+                      />
+                      {showLabel('name') && (
+                        <label
+                          className={`${labelTeal} absolute left-3 top-1 pointer-events-none`}
+                          htmlFor="user-name"
+                        >
+                          Nome Completo
+                        </label>
+                      )}
+                    </div>
+                    <div className="mt-[2px] text-[12px] leading-[16px] font-['Manrope'] text-[#64748b] text-right">
+                      Máx. 30 caracteres
+                    </div>
+                    {errors.name && (
+                      <p className="mt-1 text-xs text-red-500 font-['Manrope'] text-right">{errors.name}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="relative">
+                      <input
+                        id="user-email"
+                        type="email"
+                        value={values.email}
+                        onChange={(e) => onChange('email', e.target.value)}
+                        onFocus={() => setFocusedField('email')}
+                        onBlur={() => setFocusedField(null)}
+                        placeholder="Insira o E-mail*"
+                        className={inputBase}
+                      />
+                      {showLabel('email') && (
+                        <label
+                          className={`${labelTeal} absolute left-3 top-1 pointer-events-none`}
+                          htmlFor="user-email"
+                        >
+                          E-mail
+                        </label>
+                      )}
+                    </div>
+                    <div className="mt-[2px] text-[12px] leading-[16px] font-['Manrope'] text-[#64748b] text-right">
+                      Máx. 40 caracteres
+                    </div>
+                    {errors.email && (
+                      <p className="mt-1 text-xs text-red-500 font-['Manrope'] text-right">{errors.email}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="relative">
+                      <input
+                        id="user-matricula"
+                        type="text"
+                        value={values.matricula}
+                        onChange={(e) => onChange('matricula', e.target.value)}
+                        onFocus={() => setFocusedField('matricula')}
+                        onBlur={() => setFocusedField(null)}
+                        placeholder="Insira o N° da matrícula"
+                        className={inputBase}
+                      />
+                      {showLabel('matricula') && (
+                        <label
+                          className={`${labelTeal} absolute left-3 top-1 pointer-events-none`}
+                          htmlFor="user-matricula"
+                        >
+                          N° da matrícula
+                        </label>
+                      )}
+                    </div>
+                    <div className="mt-[2px] text-[12px] leading-[16px] font-['Manrope'] text-[#64748b] text-right">
+                      Min. 4 dígitos · Máx. 10
+                    </div>
+                    {errors.matricula && (
+                      <p className="mt-1 text-xs text-red-500 font-['Manrope'] text-right">{errors.matricula}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className="flex items-center mb-4">
+                <h2 className="font-['Manrope'] text-[14px] leading-[19px] font-bold text-[#0B2B25]">
+                  Dados de acesso
+                </h2>
+                <div className="ml-4 flex-1 h-px bg-[#CBD5E1]" />
+              </div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+                <div className="flex-1 flex flex-col gap-1">
+                  <div className="relative">
+                    <input
+                      id="user-password"
+                      type={showPassword ? 'text' : 'password'}
+                      value={values.password}
+                      onChange={(e) => onChange('password', e.target.value)}
+                      onFocus={() => setFocusedField('password')}
+                      onBlur={() => setFocusedField(null)}
+                      placeholder={mode === 'create' ? 'Senha' : 'Nova senha (opcional)'}
+                      className={inputBase + ' pr-10'}
+                    />
+                    {showLabel('password') && (
+                      <label
+                        className={`${labelTeal} absolute left-3 top-1 pointer-events-none`}
+                        htmlFor="user-password"
+                      >
+                        Senha
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute inset-y-0 right-3 flex items-center justify-center text-[#64748b]"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.password && (
+                    <p className="mt-1 text-xs text-red-500 font-['Manrope']">{errors.password}</p>
+                  )}
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  <div className="relative">
+                    <input
+                      id="user-confirmPassword"
+                      type={showConfirm ? 'text' : 'password'}
+                      value={values.confirmPassword}
+                      onChange={(e) => onChange('confirmPassword', e.target.value)}
+                      onFocus={() => setFocusedField('confirmPassword')}
+                      onBlur={() => setFocusedField(null)}
+                      placeholder="Repetir Senha"
+                      className={inputBase + ' pr-10'}
+                    />
+                    {showLabel('confirmPassword') && (
+                      <label
+                        className={`${labelTeal} absolute left-3 top-1 pointer-events-none`}
+                        htmlFor="user-confirmPassword"
+                      >
+                        Repetir Senha
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirm((v) => !v)}
+                      className="absolute inset-y-0 right-3 flex items-center justify-center text-[#64748b]"
+                    >
+                      {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="mt-1 text-xs text-red-500 font-['Manrope']">{errors.confirmPassword}</p>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <div className="mt-4 flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="h-[44px] px-8 rounded-[8px] border border-[#0D1931] bg-white font-['Manrope'] font-semibold text-[#0D1931] transition-all duration-200 hover:bg-[#f1f5f9] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={!canSubmit || submitting}
+                className="h-[44px] px-8 rounded-[8px] font-['Manrope'] font-semibold text-white transition-colors duration-200 bg-[#0290A4] hover:bg-[#017E92] active:bg-[#016979] disabled:bg-[#E5E7EB] disabled:text-[#9CA3AF] disabled:cursor-not-allowed cursor-pointer"
+              >
+                {primaryButtonLabel}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function UserCreatePage() {
+  const navigate = useNavigate()
+  const { create, loading } = useCreateUser()
+  const [values, setValues] = useState<UserFormValues>({
+    name: '',
+    email: '',
+    matricula: '',
+    password: '',
+    confirmPassword: '',
+  })
+  const [errors, setErrors] = useState<UserFormErrors>({})
+
+  const validateValues = (vals: UserFormValues): UserFormErrors => {
+    const payload: CreateUserPayload = {
+      name: vals.name.trim(),
+      email: vals.email.trim(),
+      matricula: vals.matricula.trim(),
+      password: vals.password,
+    }
+    const result = validateCreateUser(payload)
+    const nextErrors: UserFormErrors = {}
+    if (!result.success) {
+      Object.assign(nextErrors, result.errors)
+    }
+    if (vals.password !== vals.confirmPassword) {
+      nextErrors.confirmPassword = 'As senhas não coincidem'
+    }
+    return nextErrors
+  }
+
+  const handleChange = (field: keyof UserFormValues, value: string) => {
+    setValues((prev) => {
+      const next = { ...prev, [field]: value }
+      setErrors(validateValues(next))
+      return next
+    })
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const payload: CreateUserPayload = {
+      name: values.name.trim(),
+      email: values.email.trim(),
+      matricula: values.matricula.trim(),
+      password: values.password,
+    }
+    let nextErrors = validateValues(values)
+    if (Object.keys(nextErrors).length === 0) {
+      try {
+        const existing = await listUsers({ search: '', page: 1, limit: 10_000 })
+        const normalizedName = values.name.trim().toLowerCase()
+        const normalizedEmail = values.email.trim().toLowerCase()
+        const normalizedMatricula = values.matricula.trim()
+
+        if (existing.items.some((u) => u.name.trim().toLowerCase() === normalizedName)) {
+          nextErrors.name = 'Colaborador já cadastrado.'
+        }
+        if (existing.items.some((u) => u.email.trim().toLowerCase() === normalizedEmail)) {
+          nextErrors.email = 'E-mail já cadastrado.'
+        }
+        if (existing.items.some((u) => u.matricula.trim() === normalizedMatricula)) {
+          nextErrors.matricula = 'Esta matrícula já foi registrada no sistema.'
+        }
+      } catch {
+      }
+    }
+
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
+    try {
+      await create(payload)
+      navigate('/usuarios')
+    } catch {
+    }
+  }
+
+  const canSubmit = isCreateUserValid({
+    name: values.name.trim(),
+    email: values.email.trim(),
+    matricula: values.matricula.trim(),
+    password: values.password,
+  }) && values.password === values.confirmPassword
+
+  return (
+    <UserFormLayout
+      mode="create"
+      title="Cadastro de Usuário"
+      breadcrumbLabel="Cadastro de Usuário"
+      primaryButtonLabel="Cadastrar"
+      submitting={loading}
+      canSubmit={canSubmit}
+      values={values}
+      errors={errors}
+      onChange={handleChange}
+      onSubmit={handleSubmit}
+      onCancel={() => navigate('/usuarios')}
+    />
+  )
+}
+
+export function UserEditPage() {
+  const navigate = useNavigate()
+  const params = useParams<{ id: string }>()
+  const id = params.id ?? null
+  const { user, loadLoading, update, updateLoading } = useEditUser(id)
+  const [values, setValues] = useState<UserFormValues>({
+    name: '',
+    email: '',
+    matricula: '',
+    password: '',
+    confirmPassword: '',
+  })
+  const [errors, setErrors] = useState<UserFormErrors>({})
+
+  useEffect(() => {
+    if (user) {
+      setValues((prev) => ({
+        ...prev,
+        name: user.name ?? '',
+        email: user.email ?? '',
+        matricula: user.matricula ?? '',
+      }))
+    }
+  }, [user])
+
+  const handleChange = (field: keyof UserFormValues, value: string) => {
+    setValues((prev) => {
+      const next = { ...prev, [field]: value }
+
+      if (!user) {
+        setErrors({})
+        return next
+      }
+
+      const payload: UpdateUserPayload = {}
+      if (next.name && next.name !== user.name) payload.name = next.name.trim()
+      if (next.email && next.email !== user.email) payload.email = next.email.trim()
+      if (next.matricula && next.matricula !== user.matricula) payload.matricula = next.matricula.trim()
+      if (next.password) {
+        if (next.password !== next.confirmPassword) {
+          setErrors({ confirmPassword: 'As senhas não coincidem' })
+          return next
+        }
+        payload.password = next.password
+      }
+
+      if (Object.keys(payload).length === 0) {
+        setErrors({})
+        return next
+      }
+
+      const result = validateUpdateUser(payload)
+      const nextErrors: UserFormErrors = {}
+      if (!result.success) {
+        Object.assign(nextErrors, result.errors)
+      }
+      setErrors(nextErrors)
+
+      return next
+    })
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!user || !id) return
+
+    const payload: UpdateUserPayload = {}
+    if (values.name && values.name !== user.name) payload.name = values.name.trim()
+    if (values.email && values.email !== user.email) payload.email = values.email.trim()
+    if (values.matricula && values.matricula !== user.matricula) payload.matricula = values.matricula.trim()
+    if (values.password) {
+      if (values.password !== values.confirmPassword) {
+        setErrors((prev) => ({ ...prev, confirmPassword: 'As senhas não coincidem' }))
+        return
+      }
+      payload.password = values.password
+    }
+
+    if (Object.keys(payload).length === 0) {
+      navigate('/usuarios')
+      return
+    }
+
+    const result = validateUpdateUser(payload)
+    const nextErrors: UserFormErrors = {}
+    if (!result.success) {
+      Object.assign(nextErrors, result.errors)
+    }
+
+    if (Object.keys(nextErrors).length === 0) {
+      try {
+        const existing = await listUsers({ search: '', page: 1, limit: 10_000 })
+        const normalizedName = (payload.name ?? '').trim().toLowerCase()
+        const normalizedEmail = (payload.email ?? '').trim().toLowerCase()
+        const normalizedMatricula = (payload.matricula ?? '').trim()
+
+        if (
+          payload.name &&
+          payload.name.trim() !== user.name.trim() &&
+          existing.items.some((u) => u.id !== user.id && u.name.trim().toLowerCase() === normalizedName)
+        ) {
+          nextErrors.name = 'Colaborador já cadastrado.'
+        }
+        if (
+          payload.email &&
+          payload.email.trim() !== user.email.trim() &&
+          existing.items.some((u) => u.id !== user.id && u.email.trim().toLowerCase() === normalizedEmail)
+        ) {
+          nextErrors.email = 'E-mail já cadastrado.'
+        }
+        if (
+          payload.matricula &&
+          payload.matricula.trim() !== user.matricula.trim() &&
+          existing.items.some((u) => u.id !== user.id && u.matricula.trim() === normalizedMatricula)
+        ) {
+          nextErrors.matricula = 'Esta matrícula já foi registrada no sistema.'
+        }
+      } catch {
+      }
+    }
+
+    setErrors(nextErrors)
+    if (Object.keys(nextErrors).length > 0) return
+
+    try {
+      await update(payload)
+      navigate('/usuarios')
+    } catch {
+    }
+  }
+
+  const derivedPayload: UpdateUserPayload = {}
+  if (user) {
+    if (values.name && values.name !== user.name) derivedPayload.name = values.name.trim()
+    if (values.email && values.email !== user.email) derivedPayload.email = values.email.trim()
+    if (values.matricula && values.matricula !== user.matricula) derivedPayload.matricula = values.matricula.trim()
+    if (values.password) derivedPayload.password = values.password
+  }
+
+  const hasChanges = Object.keys(derivedPayload).length > 0
+  const passwordsOk = !values.password || values.password === values.confirmPassword
+  const canSubmit = hasChanges && passwordsOk && isUpdateUserValid(derivedPayload)
+
+  if (loadLoading && !user) {
+    return (
+      <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
+        <div className="flex-1 flex flex-col min-h-0 w-full max-w-[1494px] mx-auto">
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <p className="font-['Manrope'] text-[#64748b]">Carregando usuário...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <UserFormLayout
+      mode="edit"
+      title="Edição de Usuário"
+      breadcrumbLabel="Edição de Usuário"
+      primaryButtonLabel="Salvar"
+      submitting={updateLoading}
+      canSubmit={canSubmit}
+      values={values}
+      errors={errors}
+      onChange={handleChange}
+      onSubmit={handleSubmit}
+      onCancel={() => navigate('/usuarios')}
+    />
+  )
+}
+
+export function UserViewPage() {
+  const navigate = useNavigate()
+  const params = useParams<{ id: string }>()
+  const id = params.id ?? null
+  const { user, loadLoading } = useEditUser(id)
+
+  if (loadLoading && !user) {
+    return (
+      <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
+        <div className="flex-1 flex flex-col min-h-0 w-full max-w-[1494px] mx-auto">
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <p className="font-['Manrope'] text-[#64748b]">Carregando usuário...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
+        <div className="flex-1 flex flex-col min-h-0 w-full max-w-[1494px] mx-auto">
+          <div className="flex-1 min-h-0 flex items-center justify-center">
+            <p className="font-['Manrope'] text-[#64748b]">Usuário não encontrado.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full bg-[#F3F3F3] flex flex-col min-h-0 pl-[44px] pr-[46px] pt-[10px] pb-[76px]">
+      <div className="flex-1 flex flex-col min-h-0 w-full max-w-[1494px] mx-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
+          <p className="font-['Manrope'] text-sm text-[#64748b] mb-1">
+            Usuários {'>'}{' '}
+            <span className="text-[#0B2B25]">Visualização de Usuário</span>
+          </p>
+          <h1
+            className="font-['Manrope'] font-bold text-left mb-4 opacity-100"
+            style={{
+              fontSize: '38px',
+              lineHeight: '52px',
+              letterSpacing: '0px',
+              color: '#0B2B25',
+            }}
+          >
+            Visualização de Usuário
+          </h1>
+
+          <div className="w-full max-w-[1503px] bg-white rounded-[6px] shadow-[0px_1px_4px_#00000029] border border-[#e2e8f0] px-6 py-6 flex flex-col gap-6">
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-['Manrope'] text-[14px] leading-[19px] font-bold text-[#0B2B25]">
+                  Dados do Usuário
+                </h2>
+              </div>
+              <div className="flex flex-col gap-4 lg:flex-row lg:gap-6">
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[12px] leading-[16px] font-['Manrope'] text-[#64748b]">
+                      <span>Nome completo</span>
+                    </div>
+                    <div className="w-full h-[44px] px-3 flex items-center rounded-[4px] border border-[#e5e7eb] bg-[#F5F5F5] font-['Manrope'] text-sm text-[#0B2B25]">
+                      {user.name}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[12px] leading-[16px] font-['Manrope'] text-[#64748b]">
+                      <span>E-mail</span>
+                    </div>
+                    <div className="w-full h-[44px] px-3 flex items-center rounded-[4px] border border-[#e5e7eb] bg-[#F5F5F5] font-['Manrope'] text-sm text-[#0B2B25]">
+                      {user.email}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between text-[12px] leading-[16px] font-['Manrope'] text-[#64748b]">
+                      <span>N° da matrícula</span>
+                    </div>
+                    <div className="w-full h-[44px] px-3 flex items-center rounded-[4px] border border-[#e5e7eb] bg-[#F5F5F5] font-['Manrope'] text-sm text-[#0B2B25]">
+                      {user.matricula}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => navigate('/usuarios')}
+              className="h-[44px] px-8 rounded-[8px] border border-[#0D1931] bg-white font-['Manrope'] font-semibold text-[#0D1931] transition-all duration-200 hover:bg-[#f1f5f9] cursor-pointer"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -404,7 +1083,7 @@ function IconPageNext({ className }: { className?: string }) {
   )
 }
 
-function UserRow({ user }: { user: User }) {
+function UserRow({ user, onView, onEdit, onDelete }: UserRowProps) {
   return (
     <tr className="group border-t border-[#e2e8f0] hover:bg-[#f8fafc] opacity-100" style={{ opacity: 1 }}>
       <td className="px-4 font-['Manrope'] text-[#0D1931] align-middle h-[36px] group-hover:h-[56px] transition-[height] duration-200 ease-out">
@@ -412,13 +1091,13 @@ function UserRow({ user }: { user: User }) {
       </td>
       <td className="w-[120px] min-w-[120px] px-8 align-middle h-[36px] group-hover:h-[56px] transition-[height] duration-200 ease-out text-left">
         <div className="flex items-center justify-start gap-2">
-          <ActionIconButton aria-label="Visualizar" onClick={() => {}}>
+          <ActionIconButton aria-label="Visualizar" onClick={() => onView(user)}>
             <IconView className="w-5 h-5" />
           </ActionIconButton>
-          <ActionIconButton aria-label="Editar" onClick={() => {}}>
+          <ActionIconButton aria-label="Editar" onClick={() => onEdit(user)}>
             <IconEdit className="w-5 h-5" />
           </ActionIconButton>
-          <ActionIconButton aria-label="Excluir" onClick={() => {}}>
+          <ActionIconButton aria-label="Excluir" onClick={() => onDelete(user)}>
             <IconDelete className="w-5 h-5" />
           </ActionIconButton>
         </div>
@@ -431,17 +1110,14 @@ function ActionIconButton({
   children,
   onClick,
   'aria-label': ariaLabel,
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  'aria-label': string
-}) {
+}: ActionIconButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className="p-1.5 rounded hover:bg-[#e2e8f0] transition-colors"
+      title={ariaLabel}
+      className="w-9 h-9 flex items-center justify-center rounded-[4px] hover:bg-[#0290A4] transition-colors cursor-pointer"
     >
       {children}
     </button>
@@ -453,19 +1129,14 @@ function PaginationButton({
   onClick,
   disabled,
   'aria-label': ariaLabel,
-}: {
-  children: React.ReactNode
-  onClick: () => void
-  disabled: boolean
-  'aria-label': string
-}) {
+}: PaginationButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className="w-[32px] h-[44px] flex items-center justify-center rounded-[5px] bg-transparent disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#f1f5f9] transition-colors"
+      className="w-[32px] h-[44px] flex items-center justify-center rounded-[5px] bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#f1f5f9] disabled:hover:bg-transparent transition-colors"
     >
       {children}
     </button>
