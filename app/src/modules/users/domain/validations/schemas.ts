@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const onlyLetters = /^[a-zA-ZÀ-ÿ\s]+$/
 const onlyNumbers = /^\d+$/
-const alphanumeric6 = /^[a-zA-Z0-9]{6}$/
+const onlyAlphanumeric = /^[a-zA-Z0-9]+$/
 
 export const createUserSchema = z.object({
   name: z
@@ -17,7 +17,8 @@ export const createUserSchema = z.object({
   password: z
     .string()
     .min(1, 'Senha é obrigatória')
-    .regex(alphanumeric6, 'Senha deve ser alfanumérica com 6 dígitos'),
+    .min(6, 'Senha deve ter no mínimo 6 caracteres')
+    .regex(onlyAlphanumeric, 'Senha deve conter apenas letras e números'),
 })
 
 export const updateUserSchema = z.object({
@@ -28,7 +29,11 @@ export const updateUserSchema = z.object({
     .optional(),
   email: z.string().email().optional(),
   matricula: z.string().regex(onlyNumbers).optional(),
-  password: z.string().regex(alphanumeric6).optional(),
+  password: z
+    .string()
+    .min(6, 'Senha deve ter no mínimo 6 caracteres alfanuméricos')
+    .regex(onlyAlphanumeric, 'Senha deve conter apenas letras e números')
+    .optional(),
 })
 
 export type CreateUserInput = z.infer<typeof createUserSchema>
