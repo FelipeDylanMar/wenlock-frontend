@@ -89,6 +89,7 @@ export function UsersPage() {
       if (newPage !== page) setPage(newPage)
       setToast('Usuário excluído com sucesso.')
     } catch {
+      setToast('Erro ao excluir usuário.')
     }
   }
 

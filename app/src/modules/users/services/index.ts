@@ -76,7 +76,9 @@ export async function listUsers(params: ListUsersParams): Promise<ListUsersResul
   const term = search?.trim().toLowerCase()
   const filtered = term
     ? all.filter((u) =>
-        [u.name, u.email, u.matricula].some((v) => v.toLowerCase().includes(term)),
+        [u.name, u.email, u.matricula].some((v) =>
+          String(v ?? '').toLowerCase().includes(term),
+        ),
       )
     : all
 
