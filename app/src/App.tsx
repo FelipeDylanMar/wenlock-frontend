@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react'
-import { routes } from '@/routes'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { AppLayout } from '@/layouts/AppLayout'
+import { HomePage } from '@/pages/Home'
+import { UsersPage } from '@/modules/users/pages'
 import '@/styles/global.css'
 
 function App() {
-  const [path, setPath] = useState(window.location.pathname)
-
-  useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname)
-    window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
-  }, [])
-
-  const route = routes.find((r) => r.path === path) ?? routes[0]
-  return route.element
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/usuarios" element={<UsersPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
 export default App
