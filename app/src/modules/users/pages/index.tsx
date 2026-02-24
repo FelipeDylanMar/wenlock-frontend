@@ -172,30 +172,29 @@ export function UsersPage() {
             </div>
           ) : (
             <>
-              <div
-                className="flex items-center h-12 px-4 rounded-t-[6px]"
-                style={{
-                  width: '100%',
-                  height: '48px',
-                  background: '#0D1931 0% 0% no-repeat padding-box',
-                  opacity: 1,
-                }}
-              >
-                <span className="flex-1 text-left font-['Manrope'] font-semibold text-white">
-                  Nome
-                </span>
-                <span className="text-left font-['Manrope'] font-semibold text-white w-[120px] shrink-0">
-                  Ações
-                </span>
-              </div>
-
-              <div className="h-[13px] w-full" aria-hidden />
-
-              <div
-                className="rounded-b-md overflow-hidden border border-t-0 border-[#e2e8f0] bg-white"
-                style={{ boxShadow: '0px 1px 4px #00000029' }}
-              >
-                <table className="w-full border-collapse">
+              <div className="overflow-x-auto">
+                <div className="min-w-[280px]">
+                  <div
+                    className="flex items-center h-12 px-4 rounded-t-[6px]"
+                    style={{
+                      height: '48px',
+                      background: '#0D1931 0% 0% no-repeat padding-box',
+                      opacity: 1,
+                    }}
+                  >
+                    <span className="flex-1 text-left font-['Manrope'] font-semibold text-white min-w-0">
+                      Nome
+                    </span>
+                    <span className="text-left font-['Manrope'] font-semibold text-white w-[120px] shrink-0">
+                      Ações
+                    </span>
+                  </div>
+                  <div className="h-[13px] w-full" aria-hidden />
+                  <div
+                    className="rounded-b-md overflow-hidden border border-t-0 border-[#e2e8f0] bg-white"
+                    style={{ boxShadow: '0px 1px 4px #00000029' }}
+                  >
+                    <table className="w-full border-collapse">
                   <tbody className="[&>tr:first-child]:border-t-0">
                     {loading ? (
                       <tr>
@@ -221,7 +220,9 @@ export function UsersPage() {
                       </tr>
                     )}
                   </tbody>
-                </table>
+                    </table>
+                  </div>
+                </div>
               </div>
             </>
           )}
@@ -230,13 +231,13 @@ export function UsersPage() {
 
         {data && (
           <footer
-            className="mt-auto shrink-0 w-full max-w-[1503px] flex flex-wrap items-center justify-between gap-4 px-0 py-4 font-['Manrope'] text-left text-[14px] leading-[19px] tracking-[0px] text-[#0B2B25]"
+            className="mt-auto shrink-0 w-full max-w-[1503px] flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-0 py-4 font-['Manrope'] text-left text-[14px] leading-[19px] tracking-[0px] text-[#0B2B25]"
           >
-              <span className="font-medium">
+              <span className="font-medium shrink-0">
                 Total de itens: <span className="font-bold">{data.total}</span>
               </span>
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-2 font-medium">
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
+                <span className="flex items-center gap-2 font-medium shrink-0">
                   Itens por página
                   <div className="relative ml-1" ref={limitDropdownRef}>
                     <button
@@ -267,7 +268,7 @@ export function UsersPage() {
                     )}
                   </div>
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                   <PaginationButton
                     onClick={() => setPage(1)}
                     disabled={!canPrev}
@@ -282,7 +283,7 @@ export function UsersPage() {
                   >
                     <IconPagePrev />
                   </PaginationButton>
-                  <span className="min-w-[32px] h-8 flex items-center justify-center rounded font-semibold text-white" style={{ background: '#0290A4' }}>
+                  <span className="min-w-[28px] sm:min-w-[32px] h-7 sm:h-8 flex items-center justify-center rounded font-semibold text-white text-[13px] sm:text-[14px]" style={{ background: '#0290A4' }}>
                     {page}
                   </span>
                   <PaginationButton
@@ -300,7 +301,7 @@ export function UsersPage() {
                     <IconPageLast />
                   </PaginationButton>
                 </div>
-                <span className="ml-2 font-medium">de <span className="font-bold">{totalPages}</span></span>
+                <span className="font-medium shrink-0">de <span className="font-bold">{totalPages}</span></span>
               </div>
             </footer>
           )}
@@ -1137,7 +1138,7 @@ function PaginationButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className="w-[32px] h-[44px] flex items-center justify-center rounded-[5px] bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#f1f5f9] disabled:hover:bg-transparent transition-colors"
+      className="w-8 h-9 sm:w-[32px] sm:h-[44px] flex items-center justify-center rounded-[5px] bg-transparent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#f1f5f9] disabled:hover:bg-transparent transition-colors shrink-0"
     >
       {children}
     </button>
